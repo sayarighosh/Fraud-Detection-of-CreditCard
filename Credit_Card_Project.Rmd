@@ -1,0 +1,1102 @@
+---
+title: "Credit_Card_Fraud_Detection"
+author: "Sayari"
+date: "June 7, 2017"
+output: output: rmarkdown::github_document
+---
+
+Develop a model to identify fraudulent transactions.
+
+This dataset presents transactions that occurred in two days, where we have 492 
+frauds out of 284,807 transactions. The dataset is highly unbalanced, the 
+positive class (frauds) account for 0.172% of all transactions.
+Except Time, Amount and Class columns the other columns from V1 to V28 are 
+unexplainable and confidential numbers. 
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+Data Wrangling 
+```{r}
+file=read.csv("creditcard.csv")
+mymatrix=as.matrix(file)       # checking for NA
+print(colnames(mymatrix)[colSums(is.na(mymatrix)) > 0])
+
+
+head(file,2)
+print(c(" no of frauds",length(which(file$Class==1))))
+file=file[,2:31]
+
+head(file,2)
+
+seqno=seq(1,length(file[,1]))
+idx=sample(seqno,200000)
+ not_idx=setdiff(seqno,idx)
+ train=file[idx,]
+ test=file[not_idx,]
+ dim(train)    # dimensions for the training data
+ x_train=train[,1:29]
+ y_train=train[,"Class"]
+ x_test=test[,1:29]
+ y_test=test[,"Class"]
+```
+
+Libraries used:
+
+```{r}
+library(e1071)
+library(caret)
+library(MASS)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(RWeka)
+library(C50)
+library(xgboost)
+library(randomForest)
+library(class)
+library(ROCR)
+```
+
+Classification Algorithms - Naive Bayes
+========================================================
+Before PCA
+```{r}
+bayesModel1 = naiveBayes(as.matrix(x_train),factor(y_train))
+
+bayesModel1
+```
+
+```{r}
+pred_Bayes1=predict(bayesModel1,newdata = as.matrix(x_test))
+bayesConfusionMatrix1 = table(pred_Bayes1,factor(y_test))
+
+bayesConfusionMatrix1
+```
+
+Chisq test
+===========================================
+```{r}
+BayesChiSq1 = chisq.test(bayesConfusionMatrix1)
+BayesChiSq1
+```
+
+Metrics
+============================================
+```{r}
+pred_Bayes1 = as.factor(pred_Bayes1)
+y_test =  as.factor(y_test)
+
+BayesAccuracy1=sum(diag(bayesConfusionMatrix1))/sum(bayesConfusionMatrix1)
+print(c("BayesAccuracy1",BayesAccuracy1))
+
+Bayes_precision1 = posPredValue(pred_Bayes1, y_test)
+print(c("Bayes_precision1",Bayes_precision1))
+
+Bayes_recall1 = sensitivity(pred_Bayes1, y_test)
+print(c("Bayes_recall1",Bayes_recall1))
+
+Bayes_Spec1 = bayesConfusionMatrix1[2,2]/(bayesConfusionMatrix1[2,2] +   
+              bayesConfusionMatrix1[1,2])
+print(c("Bayes_Spec1",Bayes_Spec1))
+
+Bayes_F1_1 = (2 * Bayes_precision1 * Bayes_recall1) / (Bayes_precision1 + 
+                                Bayes_recall1)
+print(c("Bayes_F1_1",Bayes_F1_1))
+```
+
+checking bayes for cut off =1
+
+```{r}
+f = predict(bayesModel1,as.matrix(x_test),type="raw")
+
+predict = matrix(f[,2],ncol=1)
+
+idx = which(predict==1)
+
+predict[idx] =1
+seqno = seq(0,dim(f)[1])
+
+not_idx = setdiff(seqno,idx)
+
+predict[not_idx]=0
+table(predict,factor(y_test))
+```
+
+Linear discriminant analysis
+=======================================================
+```{r}
+x_train1 = x_train
+ldaModel1 = lda((y_train)~as.matrix(x_train1))
+x_train1 = x_test
+
+ldaModel1
+```
+
+#Confusion Matrix
+```{r}
+pred_Lda1 = predict(ldaModel1,newdata = (x_train1))$class
+ldaConfusionMatrix1 = table(pred_Lda1,y_test)
+ldaConfusionMatrix1
+```
+
+#Metrics
+```{r}
+pred_Lda1 = as.factor(pred_Lda1)
+y_test =  as.factor(y_test)
+
+Lda_Accuracy1=sum(diag(ldaConfusionMatrix1))/sum(ldaConfusionMatrix1)
+print(c("Lda_Accuracy1",Lda_Accuracy1))
+
+Lda_precision1 = posPredValue(pred_Lda1, y_test)
+print(c("Lda_precision1",Lda_precision1))
+
+Lda_recall1 = sensitivity(pred_Lda1, y_test)
+print(c("Lda_recall1",Lda_recall1))
+
+Lda_Spec1 = ldaConfusionMatrix1[2,2]/(ldaConfusionMatrix1[2,2] +   
+              ldaConfusionMatrix1[1,2])
+print(c("Lda_Spec1",Lda_Spec1))
+
+Lda_F1_1 = (2 * Lda_precision1 * Lda_recall1) / (Lda_precision1 + 
+                                Lda_recall1)
+print(c("Lda_F1_1",Lda_F1_1))
+```
+
+Classification 
+================================================
+```{r}
+x_train1=x_train
+cTreeModel1=rpart(factor(y_train)~as.matrix(x_train1),method = 'class')
+
+fancyRpartPlot(cTreeModel1)
+
+```
+
+#Confusion Matrix
+```{r}
+x_train1=x_test
+pred_CTree1 = round(predict(cTreeModel1,x_train1))
+pred_CTree1=pred_CTree1[,2]
+cTreeConfusionMatrix1 = table(pred_CTree1,y_test)
+cTreeConfusionMatrix1
+```
+
+#Chisq Test
+
+```{r}
+cTreeChisq1 = chisq.test(cTreeConfusionMatrix1)
+cTreeChisq1
+```
+
+#Metrics
+```{r}
+pred_CTree1 = as.factor(pred_CTree1)
+y_test =  as.factor(y_test)
+
+cTree_accuracy1=sum(diag(cTreeConfusionMatrix1))/sum(cTreeConfusionMatrix1)
+print(c("cTree_accuracy1",cTree_accuracy1))
+
+cTree_precision1 = posPredValue(pred_CTree1, y_test)
+print(c("cTree_precision1",cTree_precision1))
+
+cTree_recall1 = sensitivity(pred_CTree1, y_test)
+print(c("cTree_recall1",cTree_recall1))
+
+cTree_Spec1 = cTreeConfusionMatrix1[2,2]/(cTreeConfusionMatrix1[2,2] +   
+              cTreeConfusionMatrix1[1,2])
+print(c("cTree_Spec1",cTree_Spec1))
+
+cTree_F1_1 = (2 * cTree_precision1 * cTree_recall1) / (cTree_precision1 + 
+                                cTree_recall1)
+print(c("cTree_F1_1",cTree_F1_1))
+```
+
+C4.5
+================================================
+```{r }
+C4.5Model1 =J48(factor(y_train)~.,x_train,
+      	control = Weka_control(), options = NULL)
+summary(C4.5Model1)
+```
+
+#Confusion Matrix
+```{r}
+pred_C4.5_1 = predict(C4.5Model1,x_test)
+C4.5ConfusionMatrix1 = table(pred_C4.5_1,y_test)
+C4.5ConfusionMatrix1
+```
+
+#Chisq Test
+
+```{r}
+C4.5Chisq1 = chisq.test(C4.5ConfusionMatrix1)
+C4.5Chisq1
+```
+
+#Metrics
+```{r}
+pred_C4.5_1 = as.factor(pred_C4.5_1)
+y_test =  as.factor(y_test)
+
+C4.5_accuracy1=sum(diag(C4.5ConfusionMatrix1))/sum(C4.5ConfusionMatrix1)
+print(c("C4.5_accuracy1",C4.5_accuracy1))
+
+C4.5_precision1 = posPredValue(pred_C4.5_1, y_test)
+print(c("C4.5_precision1",C4.5_precision1))
+
+C4.5_recall1 = sensitivity(pred_C4.5_1, y_test)
+print(c("C4.5_recall1",C4.5_recall1))
+
+C4.5_Spec1 = C4.5ConfusionMatrix1[2,2]/(C4.5ConfusionMatrix1[2,2] +   
+              C4.5ConfusionMatrix1[1,2])
+print(c("C4.5_Spec1",C4.5_Spec1))
+
+C4.5_F1_1 = (2 * C4.5_precision1 * C4.5_recall1) / (C4.5_precision1 + 
+                                C4.5_recall1)
+print(c("C4.5_F1_1",C4.5_F1_1))
+```
+
+C5.0
+=======================================================
+```{r }
+C5.0Model1 =C5.0(x_train,
+       	factor(y_train),
+       	trials=20,rules = FALSE)
+
+C5.0Model1
+plot(C5.0Model1)
+```
+
+#Confusion Matrix
+
+```{r}
+pred_C5.0_1 = predict(C5.0Model1,x_test)
+C5.0ConfusionMatrix1 = table(pred_C5.0_1,y_test)
+C5.0ConfusionMatrix1
+```
+
+#Chisq Test
+
+```{r}
+C5.0Chisq1 = chisq.test(C5.0ConfusionMatrix1)
+C5.0Chisq1
+```
+
+#Metrics
+```{r}
+pred_C5.0_1 = as.factor(pred_C5.0_1)
+y_test =  as.factor(y_test)
+
+C5.0_Accuracy1=sum(diag(C5.0ConfusionMatrix1))/sum(C5.0ConfusionMatrix1)
+print(c("C5.0_Accuracy1",C5.0_Accuracy1))
+
+C5.0_precision1 = posPredValue(pred_C5.0_1, y_test)
+print(c("C5.0_precision1",C5.0_precision1))
+
+C5.0_recall1 = sensitivity(pred_C5.0_1, y_test)
+print(c("C5.0_recall1",C5.0_recall1))
+
+C5.0_Spec1 = C5.0ConfusionMatrix1[2,2]/(C5.0ConfusionMatrix1[2,2] +   
+              C5.0ConfusionMatrix1[1,2])
+print(c("C5.0_Spec1",C5.0_Spec1))
+
+C5.0_F1_1 = (2 * C5.0_precision1 * C5.0_recall1) / (C5.0_precision1 + 
+                                C5.0_recall1)
+print(c("C5.0_F1_1",C5.0_F1_1))
+```
+
+Logit
+=======================================================
+```{r }
+x_train1=x_train
+logitModel1 = glm(y_train~as.matrix(x_train1),
+                 family=binomial(link="logit"))
+x_train1=x_test
+
+logitModel1
+```
+
+```{r}
+pred_logit1=round(predict(logitModel1,x_train1,type="response"),0)
+logitConfusionMatrix1 = table(pred_logit1,y_test)
+logitConfusionMatrix1
+```
+
+```{r}
+lgChisq1 = chisq.test(logitConfusionMatrix1)
+lgChisq1
+```
+
+#Metrics
+```{r}
+pred_logit1 = as.factor(pred_logit1)
+y_test =  as.factor(y_test)
+
+lg_Accuracy1=sum(diag(logitConfusionMatrix1))/sum(logitConfusionMatrix1)
+print(c("lg_Accuracy1",lg_Accuracy1))
+
+lg_precision1 = posPredValue(pred_logit1, y_test)
+print(c("lg_precision1",lg_precision1))
+
+lg_recall1 = sensitivity(pred_logit1, y_test)
+print(c("lg_recall1",lg_recall1))
+
+lg_Spec1 = logitConfusionMatrix1[2,2]/(logitConfusionMatrix1[2,2] +   
+              logitConfusionMatrix1[1,2])
+print(c("lg_Spec1",lg_Spec1))
+
+lg_F1_1 = (2 * lg_precision1 * lg_recall1) / (lg_precision1 + 
+                                lg_recall1)
+print(c("lg_F1_1",lg_F1_1))
+```
+
+Probit
+=======================================================
+```{r }
+x_train1=x_train
+probitModel1 = glm(y_train~as.matrix(x_train1),
+                  family=binomial(link="probit"))
+x_train1=x_test
+probitModel1
+```
+
+```{r}
+pred_probit1=round(predict(probitModel1,x_train1,type="response"),0)
+probitConfusionMatrix1 = table(pred_probit1,y_test)
+probitConfusionMatrix1
+```
+
+```{r}
+pbChisq1 = chisq.test(probitConfusionMatrix1)
+pbChisq1
+```
+
+#Metrics
+```{r}
+pred_probit1 = as.factor(pred_probit1)
+y_test =  as.factor(y_test)
+
+pb_Accuracy1=sum(diag(probitConfusionMatrix1))/sum(probitConfusionMatrix1)
+print(c("pb_Accuracy1",pb_Accuracy1))
+
+pb_precision1 = posPredValue(pred_probit1, y_test)
+print(c("pb_precision1",pb_precision1))
+
+pb_recall1 = sensitivity(pred_probit1, y_test)
+print(c("pb_recall1",pb_recall1))
+
+pb_Spec1 = probitConfusionMatrix1[2,2]/(probitConfusionMatrix1[2,2] +   
+              probitConfusionMatrix1[1,2])
+print(c("pb_Spec1",pb_Spec1))
+
+pb_F1_1 = (2 * pb_precision1 * pb_recall1) / (pb_precision1 + 
+                                pb_recall1)
+print(c("pb_F1_1",pb_F1_1))
+```
+
+Boosting
+=======================================================
+```{r}
+objectives=c("reg:linear","reg:logistic","binary:logistic")
+
+for (x in objectives)
+{
+  print(x)
+  xgboostModel1 = xgboost(data=(as.matrix(x_train)),
+                 label=y_train,
+                 objective = x, nrounds=10)
+  print(names(xgboostModel1))
+  
+  pred_Boost1 = round(predict(xgboostModel1,as.matrix(x_test)),0)
+  
+  boostConfusionMatrix1 = table(pred_Boost1,y_test)
+  print(boostConfusionMatrix1)
+  
+  Boostchisq1 = chisq.test(boostConfusionMatrix1) 
+  print(Boostchisq1)
+  Boost_Accuracy1=sum(diag(boostConfusionMatrix1))/sum(boostConfusionMatrix1)
+  print(Boost_Accuracy1)
+}
+```
+
+
+Sampling 20000 data points for training in order to reduce time for the list of
+algo : KNN, SVM, random forest
+```{r}
+seqno=seq(0,length(file[,1]))
+idx=sample(seqno,20000)
+ not_idx=setdiff(seqno,idx)
+ train_t=file[idx,]
+ test_t=file[not_idx,]
+ dim(train_t)
+ x_train_t=train_t[,1:29]
+ y_train_t=train_t[,"Class"]
+ x_test_t=test_t[,1:29]
+ y_test_t=test_t[,"Class"]
+```
+
+Support Vector Machine
+==============================================
+```{r}
+SVMmodel1 = svm(x_train_t,y_train_t,type = 'C-classification'
+                ,kernel = 'radial')
+SVMmodel1
+```
+
+```{r}
+pred_svm1=predict(SVMmodel1,newdata = x_test_t)
+
+SVMConfusionMatrix1 = table(pred_svm1,y_test_t)
+SVMConfusionMatrix1
+```
+
+```{r}
+SVMChisq1 = chisq.test(SVMConfusionMatrix1)
+SVMChisq1
+```
+
+#Metrics
+```{r}
+pred_svm1 = as.factor(pred_svm1)
+y_test_t =  as.factor(y_test_t)
+
+SVM_Accuracy1=sum(diag(SVMConfusionMatrix1))/sum(SVMConfusionMatrix1)
+print(c("SVM_Accuracy1",SVM_Accuracy1))
+
+svm_precision1 = posPredValue(pred_svm1, y_test_t)
+print(c("svm_precision1",svm_precision1))
+
+svm_recall1 = sensitivity(pred_probit1, y_test_t)
+print(c("svm_recall1",svm_recall1))
+
+svm_Spec1 = SVMConfusionMatrix1[2,2]/(SVMConfusionMatrix1[2,2] +   
+              SVMConfusionMatrix1[1,2])
+print(c("svm_Spec1",svm_Spec1))
+
+svm_F1_1 = (2 * svm_precision1 * svm_recall1) / (svm_precision1 + 
+                                svm_recall1)
+print(c("svm_F1_1",svm_F1_1))
+```
+
+Random Forest
+=============================================
+```{r}
+rfModel1 <- randomForest(x_train_t,y_train_t,
+                      	importance=TRUE,ntree=500)
+rfModel1
+```
+
+```{r}
+pred_rf1 = round(predict(rfModel1,(x_test_t),type="response"),0)
+
+rfConfusionMatrix1 = table(pred_rf1,y_test_t)
+rfConfusionMatrix1
+```
+#ChiSq test
+
+```{r}
+rfChisq1 = chisq.test(rfConfusionMatrix1)
+rfChisq1
+```
+
+#Metrics
+```{r}
+pred_rf1 = as.factor(pred_rf1)
+y_test_t =  as.factor(y_test_t)
+
+rf_Accuracy1=sum(diag(rfConfusionMatrix1))/sum(rfConfusionMatrix1)
+print(c("rf_Accuracy1",rf_Accuracy1))
+
+rf_precision1 = posPredValue(pred_rf1, y_test_t)
+print(c("rf_precision1",rf_precision1))
+
+rf_recall1 = sensitivity(pred_probit1, y_test_t)
+print(c("rf_recall1",rf_recall1))
+
+rf_Spec1 = rfConfusionMatrix1[2,2]/(rfConfusionMatrix1[2,2] +   
+              rfConfusionMatrix1[1,2])
+print(c("rf_Spec1",rf_Spec1))
+
+rf_F1_1 = (2 * rf_precision1 * rf_recall1) / (rf_precision1 + 
+                                rf_recall1)
+print(c("rf_F1_1",rf_F1_1))
+```
+
+KNN
+==================================================
+```{r}
+knnModel1 = knn(x_train_t, x_test_t, y_train_t, k = 3,
+                  prob = FALSE, use.all = TRUE)
+```
+
+```{r}
+knnConfusionMatrix1 = table(knnModel1,y_test_t)
+knnConfusionMatrix1
+```
+#Chisq test
+
+```{r}
+knnChisq1 = chisq.test(knnConfusionMatrix1)
+knnChisq1
+```
+
+#Metrics
+```{r}
+knn_Accuracy1=sum(diag(knnConfusionMatrix1))/sum(knnConfusionMatrix1)
+print(c("knn_Accuracy1",knn_Accuracy1))
+
+knn_precision1 = posPredValue(knnModel1, y_test_t)
+print(c("knn_precision1",knn_precision1))
+
+knn_recall1 = sensitivity(knnModel1, y_test_t)
+print(c("knn_recall1",knn_recall1))
+
+knn_Spec1 = knnConfusionMatrix1[2,2]/(knnConfusionMatrix1[2,2] +   
+              knnConfusionMatrix1[1,2])
+print(c("knn_Spec1",knn_Spec1))
+
+knn_F1_1 = (2 * knn_precision1 * knn_recall1) / (knn_precision1 + 
+                                knn_recall1)
+print(c("knn_F1_1",knn_F1_1))
+```
+
+#creating data frame 
+```{r}
+algorithms1 = c('Naive Bayes','Linear Discriminant Analysis','Support Vector Machine','KNN','Probit','Logit','Classification Tree','C4.5','C5.0','Random Forest')
+
+Accuracy1 = c(BayesAccuracy1,Lda_Accuracy1,SVM_Accuracy1,knn_Accuracy1,
+             pb_Accuracy1,lg_Accuracy1,cTree_accuracy1,C4.5_accuracy1,
+             C5.0_Accuracy1,rf_Accuracy1)
+
+Precision1 = c(Bayes_precision1,Lda_precision1,svm_precision1,knn_precision1,
+              pb_precision1,lg_precision1,cTree_precision1,C4.5_precision1,
+              C5.0_precision1,rf_precision1)
+
+Specificity1 = c(Bayes_Spec1,Lda_Spec1,svm_Spec1,knn_Spec1,pb_Spec1,lg_Spec1,
+                cTree_Spec1,C4.5_Spec1,C5.0_Spec1,rf_Spec1)
+
+Recall1 = c(Bayes_recall1,Lda_recall1,svm_recall1,knn_recall1,pb_recall1,
+           lg_recall1,cTree_recall1,C4.5_recall1,C5.0_recall1,rf_recall1)
+
+F1Score1 = c(Bayes_F1_1,Lda_F1_1,svm_F1_1,knn_F1_1,pb_F1_1,lg_F1_1,cTree_F1_1,
+            C4.5_F1_1,C5.0_F1_1,rf_F1_1)
+```
+
+populating the dataframe
+```{r}
+statistics1 = data.frame(algorithms1,Accuracy1,Precision1,Specificity1,
+                        Recall1,F1Score1)
+statistics1
+```
+
+PCA
+====================================================
+
+```{r}
+cc_train = x_train
+head(cc_train)
+cc_train$Amount = (cc_train$Amount - mean(cc_train$Amount))/sd(cc_train$Amount)
+head(cc_train)
+```
+
+Principal Component Analysis
+========================================================
+```{r}
+pca = princomp(cc_train[,1:29])
+summary(pca)
+screeplot(pca)
+```
+
+```{r}
+pca$loadings
+```
+
+Doing Principal component analysis gives that the main 2 components are 
+comprised of V1 and V2. 
+
+
+Taking a subset of 15 variables on the basis of PCA to get 80% of the 
+total proportion
+=================================================
+```{r}
+x_train_15 = x_train[1:15]
+x_test_15  = x_test[1:15]
+```
+
+Naive Bayes
+=================================================
+```{r}
+bayesModel2 = naiveBayes(as.matrix(x_train_15),factor(y_train))
+
+bayesModel2
+```
+
+```{r}
+pred_Bayes2=predict(bayesModel2,newdata = as.matrix(x_test_15))
+bayesConfusionMatrix2 = table(pred_Bayes2,factor(y_test))
+
+bayesConfusionMatrix2
+```
+
+#Chisq test
+```{r}
+BayesChiSq2 = chisq.test(bayesConfusionMatrix2)
+BayesChiSq2
+```
+
+#Metrics
+```{r}
+pred_Bayes2 = as.factor(pred_Bayes2)
+y_test =  as.factor(y_test)
+
+BayesAccuracy2=sum(diag(bayesConfusionMatrix2))/sum(bayesConfusionMatrix2)
+print(c("BayesAccuracy2",BayesAccuracy2))
+
+Bayes_precision2 = posPredValue(pred_Bayes2, y_test)
+print(c("Bayes_precision2",Bayes_precision2))
+
+Bayes_recall2 = sensitivity(pred_Bayes2, y_test)
+print(c("Bayes_recall2",Bayes_recall2))
+
+Bayes_Spec2 = bayesConfusionMatrix2[2,2]/(bayesConfusionMatrix2[2,2] +   
+              bayesConfusionMatrix2[1,2])
+print(c("Bayes_Spec2",Bayes_Spec2))
+
+Bayes_F1_2 = (2 * Bayes_precision2 * Bayes_recall2) / 
+                 (Bayes_precision2 + Bayes_recall2)
+print(c("Bayes_F1_2",Bayes_F1_2))
+```
+
+Linear discriminant analysis
+=======================================================
+```{r}
+x_train1_15 = x_train_15
+ldaModel2 = lda((y_train)~as.matrix(x_train1_15))
+x_train1_15 = x_test_15
+
+ldaModel2
+```
+
+#Confusion Matrix
+```{r}
+pred_Lda2 = predict(ldaModel2,newdata = (x_train1_15))$class
+ldaConfusionMatrix2 = table(pred_Lda2,y_test)
+ldaConfusionMatrix2
+```
+
+#Metrics
+```{r}
+pred_Lda2 = as.factor(pred_Lda2)
+y_test =  as.factor(y_test)
+
+Lda_Accuracy2=sum(diag(ldaConfusionMatrix2))/sum(ldaConfusionMatrix2)
+print(c("Lda_Accuracy2",Lda_Accuracy2))
+
+Lda_precision2 = posPredValue(pred_Lda2, y_test)
+print(c("Lda_precision2",Lda_precision2))
+
+Lda_recall2 = sensitivity(pred_Lda2, y_test)
+print(c("Lda_recall2",Lda_recall2))
+
+Lda_Spec2 = ldaConfusionMatrix2[2,2]/(ldaConfusionMatrix2[2,2] +   
+              ldaConfusionMatrix2[1,2])
+print(c("Lda_Spec2",Lda_Spec2))
+
+Lda_F1_2 = (2 * Lda_precision2 * Lda_recall2) / (Lda_precision2 + 
+                                Lda_recall2)
+print(c("Lda_F1_2",Lda_F1_2))
+```
+
+Classification 
+================================================
+```{r}
+x_train1_15 = x_train_15
+cTreeModel2=rpart(factor(y_train)~as.matrix(x_train1_15),method = 'class')
+
+fancyRpartPlot(cTreeModel2)
+```
+
+#Confusion Matrix
+
+```{r}
+x_train1_15=x_test_15
+pred_CTree2 = round(predict(cTreeModel2,x_train1_15))
+pred_CTree2=pred_CTree2[,2]
+cTreeConfusionMatrix2 = table(pred_CTree2,y_test)
+cTreeConfusionMatrix2
+```
+
+#Chisq Test
+
+```{r}
+cTreeChisq2 = chisq.test(cTreeConfusionMatrix2)
+cTreeChisq2
+```
+
+#Metrics
+```{r}
+pred_CTree2 = as.factor(pred_CTree2)
+y_test =  as.factor(y_test)
+
+cTree_accuracy2=sum(diag(cTreeConfusionMatrix2))/sum(cTreeConfusionMatrix2)
+print(c("cTree_accuracy2",cTree_accuracy2))
+
+cTree_precision2 = posPredValue(pred_CTree2, y_test)
+print(c("cTree_precision2",cTree_precision2))
+
+cTree_recall2 = sensitivity(pred_CTree2, y_test)
+print(c("cTree_recall2",cTree_recall2))
+
+cTree_Spec2 = cTreeConfusionMatrix2[2,2]/(cTreeConfusionMatrix2[2,2] +   
+              cTreeConfusionMatrix2[1,2])
+print(c("cTree_Spec2",cTree_Spec2))
+
+cTree_F1_2 = (2 * cTree_precision2 * cTree_recall2) / (cTree_precision2 + 
+                                cTree_recall2)
+print(c("cTree_F1_2",cTree_F1_2))
+```
+
+C4.5
+================================================
+```{r }
+C4.5Model2 =J48(factor(y_train)~.,x_train_15,
+      	control = Weka_control(), options = NULL)
+summary(C4.5Model2)
+```
+
+#Confusion Matrix
+```{r}
+pred_C4.5_2 = predict(C4.5Model2,x_test_15)
+C4.5ConfusionMatrix2 = table(pred_C4.5_2,y_test)
+C4.5ConfusionMatrix2
+```
+
+#Chisq Test
+
+```{r}
+C4.5Chisq2 = chisq.test(C4.5ConfusionMatrix2)
+C4.5Chisq2
+```
+
+#Metrics
+```{r}
+pred_C4.5_2 = as.factor(pred_C4.5_2)
+y_test =  as.factor(y_test)
+
+C4.5_accuracy2=sum(diag(C4.5ConfusionMatrix2))/sum(C4.5ConfusionMatrix2)
+print(c("C4.5_accuracy2",C4.5_accuracy2))
+
+C4.5_precision2 = posPredValue(pred_C4.5_2, y_test)
+print(c("C4.5_precision2",C4.5_precision2))
+
+C4.5_recall2 = sensitivity(pred_C4.5_2, y_test)
+print(c("C4.5_recall2",C4.5_recall2))
+
+C4.5_Spec2 = C4.5ConfusionMatrix2[2,2]/(C4.5ConfusionMatrix2[2,2] +   
+              C4.5ConfusionMatrix2[1,2])
+print(c("C4.5_Spec2",C4.5_Spec2))
+
+C4.5_F1_2 = (2 * C4.5_precision2 * C4.5_recall2) / (C4.5_precision2 + 
+                                C4.5_recall2)
+print(c("C4.5_F1_2",C4.5_F1_2))
+```
+
+C5.0
+=======================================================
+```{r }
+C5.0Model2 =C5.0(x_train_15,
+       	factor(y_train),
+       	trials=20,rules = FALSE)
+
+C5.0Model2
+plot(C5.0Model2)
+```
+
+#Confusion Matrix
+
+```{r}
+pred_C5.0_2 = predict(C5.0Model2,x_test_15)
+C5.0ConfusionMatrix2 = table(pred_C5.0_2,y_test)
+C5.0ConfusionMatrix2
+```
+
+#Chisq Test
+
+```{r}
+C5.0Chisq2 = chisq.test(C5.0ConfusionMatrix2)
+C5.0Chisq2
+```
+
+#Metrics
+```{r}
+pred_C5.0_2 = as.factor(pred_C5.0_2)
+y_test =  as.factor(y_test)
+
+C5.0_Accuracy2=sum(diag(C5.0ConfusionMatrix2))/sum(C5.0ConfusionMatrix2)
+print(c("C5.0_Accuracy2",C5.0_Accuracy2))
+
+C5.0_precision2 = posPredValue(pred_C5.0_2, y_test)
+print(c("C5.0_precision2",C5.0_precision2))
+
+C5.0_recall2 = sensitivity(pred_C5.0_2, y_test)
+print(c("C5.0_recall2",C5.0_recall2))
+
+C5.0_Spec2 = C5.0ConfusionMatrix2[2,2]/(C5.0ConfusionMatrix2[2,2] +   
+              C5.0ConfusionMatrix2[1,2])
+print(c("C5.0_Spec2",C5.0_Spec2))
+
+C5.0_F1_2 = (2 * C5.0_precision2 * C5.0_recall2) / (C5.0_precision2 + 
+                                C5.0_recall2)
+print(c("C5.0_F1_2",C5.0_F1_2))
+```
+
+Logit
+=======================================================
+```{r }
+x_train1_15=x_train_15
+logitModel2 = glm(y_train~as.matrix(x_train1_15),
+                 family=binomial(link="logit"))
+x_train1_15=x_test_15
+
+logitModel2
+```
+
+```{r}
+pred_logit2=round(predict(logitModel2,x_train1_15,type="response"),0)
+logitConfusionMatrix2 = table(pred_logit2,y_test)
+logitConfusionMatrix2
+```
+
+```{r}
+lgChisq2 = chisq.test(logitConfusionMatrix2)
+lgChisq2
+```
+
+#Metrics
+```{r}
+pred_logit2 = as.factor(pred_logit2)
+y_test =  as.factor(y_test)
+
+lg_Accuracy2=sum(diag(logitConfusionMatrix2))/sum(logitConfusionMatrix2)
+print(c("lg_Accuracy2",lg_Accuracy2))
+
+lg_precision2 = posPredValue(pred_logit2, y_test)
+print(c("lg_precision2",lg_precision2))
+
+lg_recall2 = sensitivity(pred_logit2, y_test)
+print(c("lg_recall2",lg_recall2))
+
+lg_Spec2 = logitConfusionMatrix2[2,2]/(logitConfusionMatrix2[2,2] +   
+              logitConfusionMatrix2[1,2])
+print(c("lg_Spec2",lg_Spec2))
+
+lg_F1_2 = (2 * lg_precision2 * lg_recall2) / (lg_precision2 + 
+                                lg_recall2)
+print(c("lg_F1_2",lg_F1_2))
+```
+
+Probit
+=======================================================
+```{r }
+x_train1_15=x_train_15
+probitModel2 = glm(y_train~as.matrix(x_train1_15),
+                  family=binomial(link="probit"))
+x_train1_15=x_test_15
+probitModel2
+```
+
+```{r}
+pred_probit2=round(predict(probitModel2,x_train1_15,type="response"),0)
+probitConfusionMatrix2 = table(pred_probit2,y_test)
+probitConfusionMatrix2
+```
+
+```{r}
+pbChisq2 = chisq.test(probitConfusionMatrix2)
+pbChisq2
+```
+
+#Metrics
+```{r}
+pred_probit2 = as.factor(pred_probit2)
+y_test =  as.factor(y_test)
+
+pb_Accuracy2=sum(diag(probitConfusionMatrix2))/sum(probitConfusionMatrix2)
+print(c("pb_Accuracy2",pb_Accuracy2))
+
+pb_precision2 = posPredValue(pred_probit2, y_test)
+print(c("pb_precision2",pb_precision2))
+
+pb_recall2 = sensitivity(pred_probit2, y_test)
+print(c("pb_recall2",pb_recall2))
+
+pb_Spec2 = probitConfusionMatrix2[2,2]/(probitConfusionMatrix2[2,2] +   
+              probitConfusionMatrix2[1,2])
+print(c("pb_Spec2",pb_Spec2))
+
+pb_F1_2 = (2 * pb_precision2 * pb_recall2) / (pb_precision2 + 
+                                pb_recall2)
+print(c("pb_F1_2",pb_F1_2))
+```
+
+#creating data frame 
+```{r}
+algorithms2 = c('Naive Bayes','Linear Discriminant Analysis', 
+               'Probit','Logit','Classification Tree','C4.5','C5.0')
+
+Accuracy2 = c(BayesAccuracy2,Lda_Accuracy2,pb_Accuracy2,lg_Accuracy2,
+             cTree_accuracy2,C4.5_accuracy2,C5.0_Accuracy2)
+
+Precision2 = c(Bayes_precision2,Lda_precision2,pb_precision2,lg_precision2,
+              cTree_precision2,C4.5_precision2,C5.0_precision2)
+
+Specificity2 = c(Bayes_Spec2,Lda_Spec2,pb_Spec2,lg_Spec2,
+                cTree_Spec2,C4.5_Spec2,C5.0_Spec2)
+
+Recall2 = c(Bayes_recall2,Lda_recall2,pb_recall2,
+           lg_recall2,cTree_recall2,C4.5_recall2,C5.0_recall2)
+
+F1Score2 = c(Bayes_F1_2,Lda_F1_2,pb_F1_2,lg_F1_2,cTree_F1_2,
+            C4.5_F1_2,C5.0_F1_2)
+```
+
+populating the dataframe
+```{r}
+statistics2 = data.frame(algorithms2,Accuracy2,Precision2,Specificity2,
+                        Recall2,F1Score2)
+statistics2
+```
+
+Before PCA
+
+```{r}
+ggplot(data=statistics1, aes(x=algorithms1, y=Accuracy1))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Accuracy1 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.97,1.0))
+```
+
+```{r}
+ggplot(data=statistics1, aes(x=algorithms1, y=Specificity1))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Specificity1 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0,1.0))
+```
+
+```{r}
+ggplot(data=statistics1, aes(x=algorithms1, y=Recall1))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Recall1 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.97,1.0))
+```
+
+
+After PCA 
+```{r}
+ggplot(data=statistics2, aes(x=algorithms2, y=Accuracy2))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Accuracy2 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.97,1.0))
+```
+
+```{r}
+ggplot(data=statistics2, aes(x=algorithms2, y=Specificity2))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Specificity2 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0,1.0))
+```
+
+```{r}
+ggplot(data=statistics2, aes(x=algorithms2, y=Recall2))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Recall2 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.97,1.0))
+```
+
+
+```{r}
+pred_Bayes1 = as.numeric(pred_Bayes1)
+pred_LDA1 = as.numeric(pred_Lda1)
+pred_CTree1 = as.numeric(pred_CTree1)
+pred_C4.5_1 = as.numeric(pred_C4.5_1)
+pred_C5.0_1 = as.numeric(pred_C5.0_1)
+pred_logit1 = as.numeric(pred_logit1)
+pred_probit1 = as.numeric(pred_probit1)
+pred_Boost1 = as.numeric(pred_Boost1)
+pred_svm1 = as.numeric(pred_svm1)
+pred_rf1 = as.numeric(pred_rf1)
+
+y_test =  as.numeric(y_test)
+y_test_t =  as.numeric(y_test_t)
+
+pr <- prediction(pred_Bayes1, y_test)
+prf <- performance(pr, "tpr", "fpr")
+pr2 <- prediction(pred_LDA1, y_test)
+prf2 <- performance(pr2, "tpr", "fpr")
+pr3 <- prediction(pred_CTree1, y_test)
+prf3 <- performance(pr3, "tpr", "fpr")
+pr4 <- prediction(pred_C4.5_1, y_test)
+prf4 <- performance(pr4, "tpr", "fpr")
+pr5 <- prediction(pred_C5.0_1, y_test)
+prf5 <- performance(pr5, "tpr", "fpr")
+pr6 <- prediction(pred_logit1, y_test)
+prf6 <- performance(pr6, "tpr", "fpr")
+pr7 <- prediction(pred_probit1, y_test)
+prf7 <- performance(pr7, "tpr", "fpr")
+pr8 <- prediction(pred_Boost1, y_test)
+prf8 <- performance(pr8, "tpr", "fpr")
+pr9 <- prediction(pred_svm1, y_test_t)
+prf9 <- performance(pr9, "tpr", "fpr")
+pr10 <- prediction(pred_rf1, y_test_t)
+prf10 <- performance(pr10, "tpr", "fpr")
+auc_bayes = as.numeric(performance(pr, "auc")@y.values)
+auc_lda = as.numeric(performance(pr2, "auc")@y.values)
+auc_ctree = as.numeric(performance(pr3, "auc")@y.values)
+auc_c45 = as.numeric(performance(pr4, "auc")@y.values)
+auc_c50 = as.numeric(performance(pr5, "auc")@y.values)
+auc_log = as.numeric(performance(pr6, "auc")@y.values)
+auc_prob = as.numeric(performance(pr7, "auc")@y.values)
+auc_boost = as.numeric(performance(pr8, "auc")@y.values)
+auc_svm = as.numeric(performance(pr9, "auc")@y.values)
+auc_rf = as.numeric(performance(pr10, "auc")@y.values)
+print(c("auc_bayes: ", auc_bayes))
+print(c("auc_lda: ", auc_lda))
+print(c("auc_ctree: ",auc_ctree))
+print(c("auc_c45: ", auc_c45))
+print(c("auc_c50: ", auc_c50))
+print(c("auc_logit: ", auc_log))
+print(c("auc_probit: ", auc_prob))
+print(c("auc_boost: ", auc_boost))
+print(c("auc_svm: ", auc_svm))
+print(c("auc_rf: ", auc_rf))
+plot(prf, col='green', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf2, add=TRUE, col= 'red', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf3, add=TRUE, col= 'blue', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf4, add=TRUE, col= 'yellow', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf5, add=TRUE, col= 'black', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf6, add=TRUE, col= 'aquamarine', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf7, add=TRUE, col= 'coral', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf8, add=TRUE, col= 'cyan', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf9, add=TRUE, col= 'bisque', legend.title="4 bootstrap-crossvalidation steps")
+plot(prf10, add=TRUE, col= 'brown', legend.title="4 bootstrap-crossvalidation steps")
+
+```
+```{r}
+
+algorithms3 = c('C4.5 Before PCA', 'C4.5 After PCA', 'LDA Before PCA', 'LDA After PCA', 'C5.0 Before PCA','C5.0 After PCA','Classification Tree Before PCA','Classification Tree After PCA') 
+Accuracy3 = c(0.9994222,0.9993633,0.9994104,0.9992336,0.9993868,0.9993161,0.9993633,0.9994104)
+
+Specificity3 = c(0.7434211,0.6907895,0.7565789,0.6907895,0.7565789,0.7039474,0.7368421,0.7302632)
+
+Recall3 = c(0.9998819,0.9999173,0.9998464,0.9997874,0.9998228,0.9998464,0.9998346,0.9998937)
+statistics3 = data.frame(algorithms3,Accuracy3,Specificity3,Recall3)
+statistics3
+```
+
+```{r}
+ggplot(data=statistics3, aes(x=algorithms3, y=Accuracy3))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Accuracy3 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.999,0.9999))
+
+ggplot(data=statistics3, aes(x=algorithms3, y=Specificity3))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Specificity3 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.65,.8))
+
+ggplot(data=statistics3, aes(x=algorithms3, y=Recall3))  + geom_bar(stat="identity", fill="steelblue",width=0.5) +
+  geom_text(aes(label=round(Recall3 * 100,digits = 3)), hjust=1.6, color="white", size=3.5) + coord_flip(ylim = c(0.999,0.9999))
+```
+
+The classification models C4.5,decision tree, logit are the once that have 
+higher recall with this dataset. Naive Bayes gives the worst recall. 
+
+
+
